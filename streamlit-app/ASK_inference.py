@@ -61,6 +61,7 @@ query = []
 
 
 
+# connect to weaviate
 def weaviate_connect_cloud(api_key, url):
     print("attempting to assign weaviate cloud client")
     

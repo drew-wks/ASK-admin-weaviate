@@ -1,7 +1,7 @@
 import streamlit as st 
 # from trubrics.integrations.streamlit import FeedbackCollector
 import ASK_inference as ASK # both scripts must be in same directory for this to work
-from ASK_inference import config
+# from ASK_inference import config
 import datetime, time
 from streamlit_extras.stylable_container import stylable_container
 
@@ -99,10 +99,14 @@ if user_question:
                 response = ASK.rag_dummy(query)  # ASK.rag_dummy for UNIT TESTING
             else:
                 response = ASK.rag(query)
-                print
-
+                generated = response.generated
+                # print(response.generated)
+            # print(response)
             short_source_list = ASK.create_short_source_list(response)
+            
             long_source_list = ASK.create_long_source_list(response)
+            # print("--------------long_source_list----------------")
+            # print(long_source_list)
 
         # except openai.error.RateLimitError:
         #     print("ASK has run out of Open AI credits. Tell Drew to go fund his account! uscgaux.drew@wks.us")
@@ -112,8 +116,13 @@ if user_question:
             print(f"An error occurred: {e} Please try ASK again later")
             response = None  
 
-        examples.empty()  
-        st.info(f"**Question:** *{user_question}*\n\n ##### Response:\n{response['result']}\n\n **Sources:**  \n{short_source_list}\n **Note:** \n ASK can make mistakes. Verify the sources and check your local policies.")
+        examples.empty()
+
+        # print(response.generated)
+        
+        st.info(f"**Question:** *{user_question}*\n\n ##### Response:\n{generated}\n\n **Sources:**  \n{short_source_list}\n **Note:** \n ASK can make mistakes. Verify the sources and check your local policies.")
+        
+        # st.info(f"**Question:** *{user_question}*\n\n ##### Response:\n{generated}\n\n **Note:** \n ASK can make mistakes. Verify the sources and check your local policies.")
 
     status.update(label=":blue[**Response**]", expanded=True)
 

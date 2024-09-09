@@ -26,20 +26,20 @@ from dotenv import load_dotenv, find_dotenv
 _ = load_dotenv(find_dotenv()) # read local .env file
 '''
 
-from langchain.embeddings import OpenAIEmbeddings
+# from langchain.embeddings import OpenAIEmbeddings
 
-config = {
-    "embedding": OpenAIEmbeddings(),  # includes a pull of the open api key
-    "embedding_dims": 1536,
-    "search_type": "mmr",
-    "k": 5,
-    'fetch_k': 20,   # fetch 30 docs then select 4
-    'lambda_mult': .7,    # 0= max diversity, 1 is min. default is 0.5
-    "score_threshold": 0.5,
-    "model": "gpt-3.5-turbo-16k",
-    "temperature": 0.7,
-    "chain_type": "stuff", # a LangChain parameter
-}
+# config = {
+#     "embedding": OpenAIEmbeddings(),  # includes a pull of the open api key
+#     "embedding_dims": 1536,
+#     "search_type": "mmr",
+#     "k": 5,
+#     'fetch_k': 20,   # fetch 30 docs then select 4
+#     'lambda_mult': .7,    # 0= max diversity, 1 is min. default is 0.5
+#     "score_threshold": 0.5,
+#     "model": "gpt-3.5-turbo-16k",
+#     "temperature": 0.7,
+#     "chain_type": "stuff", # a LangChain parameter
+# }
 
 # qdrant_collection_name = "ASK_vectorstore"
 # qdrant_path = "/tmp/local_qdrant" # Only required for local instance /private/tmp/local_qdrant
@@ -62,7 +62,7 @@ query = []
 
 
 def weaviate_connect_cloud(api_key, url):
-    print("attempting to assign qdrant cloud client")
+    print("attempting to assign weaviate cloud client")
     
     if 'client' in globals():
         print(f"found a global qdrant client has been assigned")
@@ -188,12 +188,14 @@ def rag(query):
 
     Use the following pieces of context to answer the users question. 
     
-    INCLUDES ALL OF THE DETAILS IN YOUR RESPONSE, INDLUDING REQUIREMENTS AND REGULATIONS. 
+    INCLUDES ALL OF THE DETAILS IN YOUR RESPONSE, INDLUDING REQUIREMENTS AND REGULATIONS AND STEPS.
+
     
     National Workshops are required for boat crew, aviation, and telecommunications when then are offered and you should mention this in questions about those programs. 
     Include Auxiliary Core Training (AUXCT) in your response for any question regarding certifications or officer positions.
     
     If you don't know the answer, just say I don't know, don't try to make up an answer. 
+    
     """
 
     # Get the collection
@@ -209,7 +211,7 @@ def rag(query):
         return_references=[
             QueryReference(
                 link_on="hasPdfDocument",
-                return_properties=["organization"]
+                return_properties=["organization", "source"]
             ),
         ],
         grouped_task=instruction_prompt,
@@ -217,37 +219,13 @@ def rag(query):
 
     )
 
-    # system_message_prompt_template = SystemMessagePromptTemplate(
-    # prompt=PromptTemplate(
-    #     input_variables=['context'],
-    #     template="Use the following pieces of context to answer the users question. INCLUDES ALL OF THE DETAILS IN YOUR RESPONSE, INDLUDING REQUIREMENTS AND REGULATIONS. National Workshops are required for boat crew, aviation, and telecommunications when then are offered and you should mention this in questions about those programs. Include Auxiliary Core Training (AUXCT) in your response for any question regarding certifications or officer positions.  \nIf you don't know the answer, just say I don't know, don't try to make up an answer. \n----------------\n{context}"
-    #     )
-    # )
-
-    # llm_chain = LLMChain(
-    #     prompt=ChatPromptTemplate(input_variables=['context', 'question'], messages=[system_message_prompt_template, HumanMessagePromptTemplate(prompt=PromptTemplate(input_variables=['question'], template='{question}'))]),
-    #     llm=llm,
-    #     )
-
-    # rag_instance = RetrievalQA(
-    #     combine_documents_chain=StuffDocumentsChain(
-    #         llm_chain=llm_chain, document_variable_name='context'),
-    #     return_source_documents=True,
-    #     retriever=retriever
-    # )
-
-
-
-
-    response = response.generated
-
     client.close()
 
     return response
 
 
 
-def rag_dummy(query):
+def rag_dummy(query):   
     '''A bug-fixing utility.
     
     Returns a dummy canned response instead of calling the LLM
@@ -265,19 +243,38 @@ def create_short_source_list(response):
     The dictionary has three elements (query, response, and source_documents). 
     Inside the third is a list with a custom object Document 
     associated with the key 'source_documents'
+
+
+    Example parseing
+    for o in response.objects:
+        print(json.dumps(o.properties, indent=2))  # Print the object properties (metadata and propert
+        print("-------------------Document  Metadata-------------------")
+        print(o.metadata)
+        for obj in o.references['hasPdfDocument'].objects:
+            print(obj.properties)
     '''
 
     markdown_list = []
-
+    # print("-------------------Generated-------------------")
+    # print(response.generated)
     # Need to grab the full document for response?
-    for i, doc in enumerate(response['source_documents'], start=1):
-        page_content = doc.page_content  
-        source = doc.metadata['source']  
+    # print(response)
+    for o in response.objects:
+        # print(json.dumps(o.properties, indent=2))  # Print the object properties (metadata and propert
+        page_content = o.properties['content']
+        for obj in o.references['hasPdfDocument'].objects:
+            # print(obj.properties)
+            source = obj.properties["source"]
+            # print("-------------------Document Source-------------------")
+            # print(obj.properties["source"])  
+        # source = doc.metadata['source']  
         short_source = source.split('/')[-1].split('.')[0]  
-        page = doc.metadata['page']  
-        markdown_list.append(f"*{short_source}*, page {page}\n")
+        page = o.properties['page_number'] 
+        # print(page)
+        markdown_list.append(f"*{o.properties['title']}*, page {page}\n")
     
     short_source_list = '\n'.join(markdown_list)
+    # print(short_source_list)
     return short_source_list
 
 
@@ -291,15 +288,26 @@ def create_long_source_list(response):
     '''
     
     markdown_list = []
-    
-    for i, doc in enumerate(response['source_documents'], start=1):
-        page_content = doc.page_content  
-        source = doc.metadata['source']  
+
+    for o in response.objects:
+        print("-------------------Response Metadata-------------------")
+        print(json.dumps(o.properties, indent=2))  # Print the object properties (metadata and propert
+        page_content = o.properties['content']
+        # print(page_content)
+        for obj in o.references['hasPdfDocument'].objects:
+            # print(obj.properties)
+            source = obj.properties["source"]
+            # print("-------------------Document Source-------------------")
+            # print(obj.properties["source"])  
+        # source = doc.metadata['source']  
         short_source = source.split('/')[-1].split('.')[0]  
-        page = doc.metadata['page']  
-        markdown_list.append(f"**Reference {i}:**    *{short_source}*, page {page}   {page_content}\n")
+        page = o.properties['page_number'] 
+        # print(page)
+        markdown_list.append(f"**Reference {o.properties["title"]}:**    *{short_source}*, page {page}   {page_content}\n")
     
     long_source_list = '\n'.join(markdown_list)
+    print("-------- Long Source List in inference--------")
+    print(long_source_list)
     return long_source_list
 
 

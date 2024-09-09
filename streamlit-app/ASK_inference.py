@@ -1,15 +1,20 @@
 
-from langchain.chat_models import ChatOpenAI
-from qdrant_client import QdrantClient
-from langchain.vectorstores import Qdrant
-from langchain.chains import RetrievalQA, StuffDocumentsChain, LLMChain
-from langchain.prompts import PromptTemplate, ChatPromptTemplate, SystemMessagePromptTemplate, HumanMessagePromptTemplate
+# from langchain.chat_models import ChatOpenAI
+# from qdrant_client import QdrantClient
+# from langchain.vectorstores import Qdrant
+# from langchain.chains import RetrievalQA, StuffDocumentsChain, LLMChain
+# from langchain.prompts import PromptTemplate, ChatPromptTemplate, SystemMessagePromptTemplate, HumanMessagePromptTemplate
+import weaviate
+import weaviate.classes.query as wq
+import json
+from weaviate.classes.query import QueryReference
+import textwrap
 import tiktoken
 import pickle
 import streamlit as st
 import json
 import os
-import openai
+from openai import OpenAI
 import re
 import pandas as pd
 import datetime
@@ -36,59 +41,64 @@ config = {
     "chain_type": "stuff", # a LangChain parameter
 }
 
-qdrant_collection_name = "ASK_vectorstore"
-qdrant_path = "/tmp/local_qdrant" # Only required for local instance /private/tmp/local_qdrant
-openai.api_key = st.secrets["OPENAI_API_KEY"] # Use this version for streamlit
-llm=ChatOpenAI(model=config["model"], temperature=config["temperature"]) #keep outside the function so it's accessible elsewhere in this notebook
+# qdrant_collection_name = "ASK_vectorstore"
+# qdrant_path = "/tmp/local_qdrant" # Only required for local instance /private/tmp/local_qdrant
+OpenAI.api_key = st.secrets["OPENAI_API_KEY"] # Use this version for streamlit
+# llm=ChatOpenAI(model=config["model"], temperature=config["temperature"]) #keep outside the function so it's accessible elsewhere in this notebook
 
 
 query = []
 
 
-def qdrant_connect_local():
-    print("attempting to assign qdrant local client")
+# def qdrant_connect_local():
+#     print("attempting to assign qdrant local client")
     
-    if 'client' in globals():
-        print(f"found a global qdrant client has been assigned")
-        return globals()['client']  # Return the existing client
-    client = QdrantClient(path=qdrant_path)  # Only required for a local instance
-    return client
+#     if 'client' in globals():
+#         print(f"found a global qdrant client has been assigned")
+#         return globals()['client']  # Return the existing client
+#     client = QdrantClient(path=qdrant_path)  # Only required for a local instance
+#     return client
 
 
 
-def qdrant_connect_cloud(api_key, url):
+def weaviate_connect_cloud(api_key, url):
     print("attempting to assign qdrant cloud client")
     
     if 'client' in globals():
         print(f"found a global qdrant client has been assigned")
         return globals()['client']  # Return the existing client
-    client = QdrantClient(
-        url=url, 
-        prefer_grpc=True,
-        api_key=api_key,
+    url = "https://fksy6wnuqfscrfox3d2c0w.c0.us-east1.gcp.weaviate.cloud"
+    api_key = "kpL3TO3LlGlD8D08nmDvLwhnQknZrvu64HO8"
+
+    client = weaviate.connect_to_wcs(
+        cluster_url=url,
+        auth_credentials=weaviate.auth.AuthApiKey(api_key),
+        headers={
+            "X-OpenAI-Api-Key": os.environ.get("OPENAI_API_KEY")
+        }
     )
     return client
 
 
 
-def create_langchain_qdrant(client):
-    '''create a langchain vectorstore object'''
-    qdrant = Qdrant(
-        client=client, 
-        collection_name=qdrant_collection_name, 
-        embeddings=config["embedding"]
-    )
-    return qdrant
+# def create_langchain_qdrant(client):
+#     '''create a langchain vectorstore object'''
+#     qdrant = Qdrant(
+#         client=client, 
+#         collection_name=qdrant_collection_name, 
+#         embeddings=config["embedding"]
+#     )
+#     return qdrant
 
     
 
-def init_retriever_and_generator(qdrant):
-    '''initialize a document retriever and response generator'''
-    retriever = qdrant.as_retriever(
-        search_type=config["search_type"], 
-        search_kwargs={'k': config["k"], "fetch_k": config["fetch_k"], "lambda_mult": config["lambda_mult"], "filter": None}, # filter documents by metadata
-    )
-    return retriever
+# def init_retriever_and_generator(qdrant):
+#     '''initialize a document retriever and response generator'''
+#     retriever = qdrant.as_retriever(
+#         search_type=config["search_type"], 
+#         search_kwargs={'k': config["k"], "fetch_k": config["fetch_k"], "lambda_mult": config["lambda_mult"], "filter": None}, # filter documents by metadata
+#     )
+#     return retriever
 
 
 def retrieval_context_excel_to_dict(file_path):
@@ -145,50 +155,99 @@ def query_maker(user_question):
 
     user_message = f"User question: {user_question}```acronyms_json: {acronyms_json}\n\nterms_json: {terms_json}```"
 
-    messages = [
-        {'role': 'system', 'content': system_message},
-        {'role': 'user', 'content': user_message},
-    ]
+    
+    openai_client = OpenAI()
 
-    response = openai.ChatCompletion.create(
-        model=config["model"],
-        messages=messages,
-        temperature=config["temperature"],
-        max_tokens=2000,
+    response = openai_client.chat.completions.create(
+    model="gpt-4o-mini",
+    messages=[
+        {"role": "system", "content": system_message},
+        {"role": "user", "content": user_message}
+    ]
     )
 
-    return response.choices[0].message['content'] if response.choices else None
+
+    # enhanced_query = response.choices[0].message.content
+
+    return response.choices[0].message.content if response.choices else None
 
 
 
-def rag(query, retriever):
+def rag(query):
     '''Runs a RAG completion on the modified query'''
 
-    system_message_prompt_template = SystemMessagePromptTemplate(
-    prompt=PromptTemplate(
-        input_variables=['context'],
-        template="Use the following pieces of context to answer the users question. INCLUDES ALL OF THE DETAILS IN YOUR RESPONSE, INDLUDING REQUIREMENTS AND REGULATIONS. National Workshops are required for boat crew, aviation, and telecommunications when then are offered and you should mention this in questions about those programs. Include Auxiliary Core Training (AUXCT) in your response for any question regarding certifications or officer positions.  \nIf you don't know the answer, just say I don't know, don't try to make up an answer. \n----------------\n{context}"
-        )
+    client = weaviate.connect_to_wcs(
+        cluster_url=st.secrets["WCS_URL"],
+        auth_credentials=weaviate.auth.AuthApiKey(st.secrets["WCS_API_KEY"]),
+        headers={
+            "X-OpenAI-Api-Key": st.secrets["OPENAI_API_KEY"]
+        }
     )
 
-    llm_chain = LLMChain(
-        prompt=ChatPromptTemplate(input_variables=['context', 'question'], messages=[system_message_prompt_template, HumanMessagePromptTemplate(prompt=PromptTemplate(input_variables=['question'], template='{question}'))]),
-        llm=llm,
-        )
+    instruction_prompt = f"""
 
-    rag_instance = RetrievalQA(
-        combine_documents_chain=StuffDocumentsChain(
-            llm_chain=llm_chain, document_variable_name='context'),
-        return_source_documents=True,
-        retriever=retriever
+    Use the following pieces of context to answer the users question. 
+    
+    INCLUDES ALL OF THE DETAILS IN YOUR RESPONSE, INDLUDING REQUIREMENTS AND REGULATIONS. 
+    
+    National Workshops are required for boat crew, aviation, and telecommunications when then are offered and you should mention this in questions about those programs. 
+    Include Auxiliary Core Training (AUXCT) in your response for any question regarding certifications or officer positions.
+    
+    If you don't know the answer, just say I don't know, don't try to make up an answer. 
+    """
+
+    # Get the collection
+    pdf_pages_collection = client.collections.get(st.secrets["COLLECTION_DOCUMENT_PAGES"])
+
+    # Perform query to the
+    # increase response window 
+
+    response = pdf_pages_collection.generate.near_text(
+        query=query, 
+        limit=6,
+        return_metadata=wq.MetadataQuery(distance=True),
+        return_references=[
+            QueryReference(
+                link_on="hasPdfDocument",
+                return_properties=["organization"]
+            ),
+        ],
+        grouped_task=instruction_prompt,
+        grouped_properties=["content"]
+
     )
 
-    response = rag_instance({"query": query})
+    # system_message_prompt_template = SystemMessagePromptTemplate(
+    # prompt=PromptTemplate(
+    #     input_variables=['context'],
+    #     template="Use the following pieces of context to answer the users question. INCLUDES ALL OF THE DETAILS IN YOUR RESPONSE, INDLUDING REQUIREMENTS AND REGULATIONS. National Workshops are required for boat crew, aviation, and telecommunications when then are offered and you should mention this in questions about those programs. Include Auxiliary Core Training (AUXCT) in your response for any question regarding certifications or officer positions.  \nIf you don't know the answer, just say I don't know, don't try to make up an answer. \n----------------\n{context}"
+    #     )
+    # )
+
+    # llm_chain = LLMChain(
+    #     prompt=ChatPromptTemplate(input_variables=['context', 'question'], messages=[system_message_prompt_template, HumanMessagePromptTemplate(prompt=PromptTemplate(input_variables=['question'], template='{question}'))]),
+    #     llm=llm,
+    #     )
+
+    # rag_instance = RetrievalQA(
+    #     combine_documents_chain=StuffDocumentsChain(
+    #         llm_chain=llm_chain, document_variable_name='context'),
+    #     return_source_documents=True,
+    #     retriever=retriever
+    # )
+
+
+
+
+    response = response.generated
+
+    client.close()
+
     return response
 
 
 
-def rag_dummy(query, retriever):
+def rag_dummy(query):
     '''A bug-fixing utility.
     
     Returns a dummy canned response instead of calling the LLM
@@ -209,7 +268,8 @@ def create_short_source_list(response):
     '''
 
     markdown_list = []
-    
+
+    # Need to grab the full document for response?
     for i, doc in enumerate(response['source_documents'], start=1):
         page_content = doc.page_content  
         source = doc.metadata['source']  
@@ -323,7 +383,7 @@ def get_library_doc_catalog_excel_and_date():
 if __name__ == "__main__":
     # Replace 'your_query' with the actual query you want to pass to rag
     query = 'your_query'
-    response = rag(query, retriever) #thisn is slightly different from the notebook
+    response = rag(query) #thisn is slightly different from the notebook
     
     # Call other functions to process the response
     short_source_list = create_short_source_list(response)

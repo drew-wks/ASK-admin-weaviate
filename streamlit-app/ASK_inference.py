@@ -67,8 +67,8 @@ def weaviate_connect_cloud(api_key, url):
     if 'client' in globals():
         print(f"found a global qdrant client has been assigned")
         return globals()['client']  # Return the existing client
-    url = "https://fksy6wnuqfscrfox3d2c0w.c0.us-east1.gcp.weaviate.cloud"
-    api_key = "kpL3TO3LlGlD8D08nmDvLwhnQknZrvu64HO8"
+    url = os.environ.get("WCS_URL")
+    api_key = os.environ.get("WCS_API_KEY")
 
     client = weaviate.connect_to_wcs(
         cluster_url=url,

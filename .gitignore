@@ -20,6 +20,7 @@ local/
 
 # Streamlit
 .streamlit/secrets.toml
+streamlit-app/.streamlit/secrets.toml
 .vscode
 .vscode/
 

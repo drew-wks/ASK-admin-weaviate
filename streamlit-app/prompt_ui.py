@@ -39,10 +39,10 @@ st.markdown("""
 # Initialize the RAG clients and retriver
 try:
     # Cache the Qdrant client connection for performance optimization
-    qdrant_connect_cloud_cached = st.cache_resource(ASK.weaviate_connect_cloud)
+    vecdb_connect_cloud_cached = st.cache_resource(ASK.weaviate_connect_cloud)
     api_key = st.secrets.WCS_URL
     url = st.secrets.WCS_API_KEY
-    client = qdrant_connect_cloud_cached(api_key, url) # use ASK.qdrant_connect_cloud(api_key, url) instead for ask-test so you can see the changes
+    client = vecdb_connect_cloud_cached(api_key, url) # use ASK.vecdb_connect_cloud(api_key, url) instead for ask-test so you can see the changes
     # qdrant = ASK.weaviate_connect_cloud()
     # retriever = ASK.init_retriever_and_generator(qdrant)
 except Exception as e:
